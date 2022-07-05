@@ -58,6 +58,8 @@ function! gen_tags#get_scm_info() abort
     if !empty(l:dir)
       let l:scm['type'] = l:item[0]
       let l:scm['root'] = gen_tags#fix_path(fnamemodify(fnamemodify(l:dir, ':h'), ':p:h'))
+
+      return
     endif
   endfor
 
