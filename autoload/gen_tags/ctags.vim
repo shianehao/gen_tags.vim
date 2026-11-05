@@ -64,7 +64,9 @@ function! s:is_universal_ctags() abort
 endfunction
 
 "Generate ctags tags and set tags option
-function! s:ctags_gen(filename, dir) abort
+"Optional a:1 is the project's db dir, for callers whose current buffer is
+"not in the project (e.g. ext.conf).
+function! s:ctags_gen(filename, dir, ...) abort
   "Explicit generation re-detects the project (repo may be new)
   call gen_tags#clear_cache()
 
@@ -74,7 +76,7 @@ function! s:ctags_gen(filename, dir) abort
   endif
 
   "Generate tags directory
-  let l:dir = gen_tags#get_db_dir()
+  let l:dir = a:0 ? a:1 : gen_tags#get_db_dir()
   call gen_tags#mkdir(l:dir)
 
   call gen_tags#echo('Generating ctags in background')
@@ -110,15 +112,19 @@ function! s:ctags_ext_edit() abort
   let l:dir = gen_tags#get_db_dir()
   call gen_tags#mkdir(l:dir)
   let l:file = l:dir . '/' . s:ext
-  exec 'split' l:file
+  exec 'split' fnameescape(l:file)
+
+  "ext.conf lives in the db dir, outside the project: remember which project
+  "it belongs to so writing it doesn't depend on the current directory.
+  let b:gen_tags_db_dir = l:dir
 endfunction
 
 "Geterate extend ctags
 function! s:ctags_ext_gen() abort
-  let l:dir = gen_tags#get_db_dir()
+  let l:dir = get(b:, 'gen_tags_db_dir', gen_tags#get_db_dir())
   for l:item in s:ctags_get_extend_list(l:dir)
     let l:file = s:ctags_get_extend_name(l:item, l:dir)
-    call s:ctags_gen(l:file, l:item)
+    call s:ctags_gen(l:file, l:item, l:dir)
   endfor
 
   augroup gen_ctags

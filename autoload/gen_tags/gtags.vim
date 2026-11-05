@@ -11,17 +11,14 @@
 "   :ClearGTAGS
 " ============================================================================
 
-"cscope databases added by this plugin, so BufWinEnter doesn't re-add them
-let s:loaded_db = {}
-
 function! s:gtags_add(file) abort
-  if has_key(s:loaded_db, a:file) || !filereadable(a:file)
+  "Already connected (exact path match): don't re-add on every BufWinEnter
+  if cscope_connection(2, a:file) || !filereadable(a:file)
     return
   endif
 
   let l:cmd = 'silent! cs add ' . a:file . ' ' . gen_tags#find_project_root() . ' -Cai'
   exec l:cmd
-  let s:loaded_db[a:file] = 1
   silent! doautocmd User GenTags#GtagsLoaded
 endfunction
 
@@ -92,7 +89,6 @@ function! s:gtags_clear(bang) abort
   let l:list = ['GTAGS', 'GPATH', 'GRTAGS', 'GSYMS']
 
   execute 'cscope kill -1'
-  let s:loaded_db = {}
 
   if empty(a:bang)
     for l:item in l:list
