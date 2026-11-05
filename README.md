@@ -17,6 +17,12 @@ I haven't use ctags/gtags for years. Maybe it's time to say goodbye to this plug
 
   `gen_tags.vim` will detect SCM(git, hg, svn) root and use it as the project root path. But you can also create a folder named as `.root` to specify a directory as the project root path.
 
+  The detected project root is cached per directory to keep buffer switching fast. `:GenCtags` and `:GenGTAGS` refresh it. If you create a new repository or `.root` folder for a file that is already open, refresh it manually with:
+
+  ```viml
+  :call gen_tags#clear_cache()
+  ```
+
   Generate/Update ctags and gtags will run in background.
 
 ## Difference between ctags and gtags
