@@ -125,6 +125,18 @@ which uses the `cscope` interface .
   Ctrl+\ t    Find this text string
   ```
 
+## Running the tests
+
+  The tests use Vim's built-in `assert_*()` functions and need no extra plugins. Install `ctags` (universal-ctags) and GNU Global to run the ctags and gtags tests; tests whose tools are missing are skipped.
+
+  ```bash
+  test/run.sh          # with vim
+  test/run.sh nvim     # with neovim
+  test/run.sh vim test/test_core.vim   # a single file
+  ```
+
+  Each `test/test_*.vim` file runs in its own fresh editor, and every `Test_*()` function in it is a test. The gtags tests need cscope support, which Neovim 0.9 and later don't have.
+
 ## Detail Usage
 
 For more details about the usage, please refer to the help document in vim by `:help gen_tags.vim`
