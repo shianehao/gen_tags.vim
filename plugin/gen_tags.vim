@@ -3,6 +3,11 @@
 " Arthur: Jia Sui <jsfaint@gmail.com>
 " ============================================================================
 
+if exists('g:loaded_gen_tags')
+  finish
+endif
+let g:loaded_gen_tags = 1
+
 "Initial ctags support
 if !exists('g:gen_tags#ctags_bin')
   let g:gen_tags#ctags_bin = 'ctags'

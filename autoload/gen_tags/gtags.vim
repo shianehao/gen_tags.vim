@@ -11,21 +11,35 @@
 "   :ClearGTAGS
 " ============================================================================
 
+"cscope databases added by this plugin, so BufWinEnter doesn't re-add them
+let s:loaded_db = {}
+
 function! s:gtags_add(file) abort
-  if filereadable(a:file)
-    let l:cmd = 'silent! cs add ' . a:file . ' ' . gen_tags#find_project_root() . ' -Cai'
-    exec l:cmd
-    silent! doautocmd User GenTags#GtagsLoaded
+  if has_key(s:loaded_db, a:file) || !filereadable(a:file)
+    return
   endif
+
+  let l:cmd = 'silent! cs add ' . a:file . ' ' . gen_tags#find_project_root() . ' -Cai'
+  exec l:cmd
+  let s:loaded_db[a:file] = 1
+  silent! doautocmd User GenTags#GtagsLoaded
 endfunction
 
 function! s:gtags_auto_load() abort
+  if !empty(&buftype)
+    return
+  endif
+
   let l:file = $GTAGSDBPATH . '/' . s:file
   call s:gtags_add(l:file)
 endfunction
 
 "Generate GTAGS
 function! s:gtags_db_gen() abort
+  "Explicit generation re-detects the project (repo may be new)
+  call gen_tags#clear_cache()
+  call s:gtags_set_env()
+
   let l:src_dir = $GTAGSROOT
   let l:db_dir = $GTAGSDBPATH
 
@@ -78,6 +92,7 @@ function! s:gtags_clear(bang) abort
   let l:list = ['GTAGS', 'GPATH', 'GRTAGS', 'GSYMS']
 
   execute 'cscope kill -1'
+  let s:loaded_db = {}
 
   if empty(a:bang)
     for l:item in l:list
@@ -94,6 +109,10 @@ function! s:gtags_clear(bang) abort
 endfunction
 
 function! s:gtags_update(full) abort
+  if !a:full && !empty(&buftype)
+    return
+  endif
+
   let l:dbfile = $GTAGSDBPATH . '/' . s:file
 
   if !filereadable(l:dbfile)
@@ -144,8 +163,16 @@ function! s:gtags_auto_gen() abort
 endfunction
 
 function! s:gtags_set_env() abort
-  let $GTAGSROOT = gen_tags#find_project_root()
-  let $GTAGSDBPATH = gen_tags#get_db_dir()
+  let l:scm = gen_tags#get_scm_info()
+  let l:root = gen_tags#find_project_root(l:scm)
+  let l:db_dir = gen_tags#get_db_dir(l:scm)
+
+  if $GTAGSROOT !=# l:root
+    let $GTAGSROOT = l:root
+  endif
+  if $GTAGSDBPATH !=# l:db_dir
+    let $GTAGSDBPATH = l:db_dir
+  endif
 endfunction
 
 function! gen_tags#gtags#init() abort
