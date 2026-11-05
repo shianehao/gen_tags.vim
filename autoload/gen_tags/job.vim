@@ -1,26 +1,22 @@
 "Prune exit job from job list
+"return: 'none' (not in list), 'run' (still running) or 'exit' (removed)
 function! s:job_prune(cmd) abort
+  let l:index = 0
   for l:item in s:job_list
     if a:cmd ==# l:item['cmd']
-      let l:index = index(s:job_list, l:item)
-      let l:job = l:item
+      if s:job_status(l:item['id']) ==# 'run'
+        return 'run'
+      endif
+
+      "Remove from list, if job exit
+      call remove(s:job_list, l:index)
+      return 'exit'
     endif
+    let l:index += 1
   endfor
 
   "Not exist in list, return none
-  if !exists('l:job')
-    return 'none'
-  endif
-
-  let l:job_id = l:job['id']
-
-  let l:status = s:job_status(l:job_id)
-
-  "Remove from list, if job exit
-  if l:status ==# 'exit'
-    call remove(s:job_list, l:index)
-    return 'exit'
-  endif
+  return 'none'
 endfunction
 
 function! gen_tags#job#system_async(cmd, ...) abort
@@ -133,6 +129,9 @@ function! s:job_status(job_id) abort
       return 'run'
     endif
   endif
+
+  "No job support: commands run synchronously, so they are always done
+  return 'exit'
 endfunction
 
 augroup gen_tags

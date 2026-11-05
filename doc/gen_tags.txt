@@ -307,12 +307,21 @@ g:gen_tags#root_path                          *g:gen_tags#root_path*
 Assign root path to set the project root. If set |g:gen_tags#root_path|, will
 ignore |g:gen_tags#root_marker|.
 
+                                                *gen_tags#clear_cache()*
+The detected project root is cached per directory, so switching buffers stays
+fast. The cache is refreshed by |:GenCtags| and |:GenGTAGS|. If you create a
+new repository or root marker for a file that is already open and don't want
+to regenerate, run: >
+  :call gen_tags#clear_cache()
+<
+
 ==============================================================================
 6. Events                                       *gen_tags-events*
 
 GenTags#CtagsLoaded                             *GenTags#CtagsLoaded*
 
-There are two events will be triggered after the ctags was loaded
+There are two events will be triggered after the ctags was loaded.
+They fire only when a database is newly added, not on every buffer switch.
 
 >
   autocmd User GenTags#CtagsLoaded echo "hello world"

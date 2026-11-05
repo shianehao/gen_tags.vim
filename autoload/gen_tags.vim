@@ -39,8 +39,28 @@ if !exists('g:gen_tags#root_path')
   let g:gen_tags#root_path = ''
 endif
 
+"Cache of scm lookups, keyed by root marker and start directory
+let s:scm_cache = {}
+
+"Drop cached project info (e.g. after creating a new repo or root marker)
+function! gen_tags#clear_cache() abort
+  let s:scm_cache = {}
+endfunction
+
 "Get scm repo info
 function! gen_tags#get_scm_info() abort
+  "finddir()/findfile() search upward from the current file's directory,
+  "or from the cwd when the buffer has no name.
+  let l:start = expand('%:p:h', 1)
+  if empty(l:start)
+    let l:start = getcwd()
+  endif
+
+  let l:key = g:gen_tags#root_marker . "\n" . l:start
+  if has_key(s:scm_cache, l:key)
+    return copy(s:scm_cache[l:key])
+  endif
+
   let l:scm = {'type': '', 'root': ''}
 
   "Supported scm repo
@@ -53,30 +73,30 @@ function! gen_tags#get_scm_info() abort
         \ ]
 
   "Detect scm type
-  for l:item in l:scm_list
-    let l:dir = function('find'.l:item[1])(l:item[0], '.;'.l:scm['root'])
+  for [l:name, l:kind] in l:scm_list
+    let l:dir = l:kind ==# 'dir' ? finddir(l:name, '.;') : findfile(l:name, '.;')
     if !empty(l:dir)
-      let l:scm['type'] = l:item[0]
+      let l:scm['type'] = l:name
       let l:scm['root'] = gen_tags#fix_path(fnamemodify(fnamemodify(l:dir, ':h'), ':p:h'))
-
-      return l:scm
+      break
     endif
   endfor
 
-  return l:scm
+  let s:scm_cache[l:key] = l:scm
+  return copy(l:scm)
 endfunction
 
 "Find the root of the project
 "if the project managed by git/hg/svn, return the repo root.
 "else return the current work directory.
-function! gen_tags#find_project_root() abort
+function! gen_tags#find_project_root(...) abort
   " Check assign root_path
-  if !empty(glob(g:gen_tags#root_path))
+  if !empty(g:gen_tags#root_path) && !empty(glob(g:gen_tags#root_path))
     return g:gen_tags#root_path
   endif
 
   "If it is scm repo, use scm folder as project root
-  let l:scm = gen_tags#get_scm_info()
+  let l:scm = a:0 ? a:1 : gen_tags#get_scm_info()
   if !empty(l:scm['type'])
     return l:scm['root']
   endif
@@ -140,15 +160,15 @@ function! gen_tags#isblacklist(path) abort
 endfunction
 
 "Get db dir according to project type and g:gen_tags#use_cache_dir
-function! gen_tags#get_db_dir() abort
-  let l:scm = gen_tags#get_scm_info()
+function! gen_tags#get_db_dir(...) abort
+  let l:scm = a:0 ? a:1 : gen_tags#get_scm_info()
 
   if g:gen_tags#use_cache_dir == 0 && !empty(l:scm['type'])
     let l:tagdir = l:scm['root'] . '/' . l:scm['type'] . '/tags_dir'
   else
-    let l:root = gen_tags#find_project_root()
+    let l:root = gen_tags#find_project_root(l:scm)
     " If g:gen_tags#cache_dir doesn't have '/', then insert '/' when concatenating
-    let l:tagdir = g:gen_tags#cache_dir . 
+    let l:tagdir = g:gen_tags#cache_dir .
         \ (g:gen_tags#cache_dir[-1:] == '/' ? '' : '/') .
         \ gen_tags#get_db_name(l:root)
   endif
@@ -178,10 +198,20 @@ endfunction
 "  1: file belongs to project
 "  0: file don't belong to project
 function! gen_tags#is_file_belongs(file) abort
-  let l:root = gen_tags#find_project_root()
+  let l:root = gen_tags#fix_path(fnamemodify(gen_tags#fix_path(gen_tags#find_project_root()), ':p:h'))
   let l:srcpath = gen_tags#fix_path(fnamemodify(a:file, ':p:h'))
 
-  if l:srcpath =~ l:root
+  "Plain path-prefix match: project paths may contain regex characters
+  "(e.g. c++), and /a/proj must not match /a/project2.
+  let l:prefix = l:root[-1:] ==# '/' ? l:root : l:root . '/'
+  if has('win32') || has('win32unix')
+    let l:srcpath = tolower(l:srcpath)
+    let l:root = tolower(l:root)
+    let l:prefix = tolower(l:prefix)
+  endif
+  let l:belongs = l:srcpath ==# l:root || stridx(l:srcpath, l:prefix) == 0
+
+  if l:belongs
     call gen_tags#echo('file ' . a:file . ' belongs to ' . l:root)
     return 1
   endif

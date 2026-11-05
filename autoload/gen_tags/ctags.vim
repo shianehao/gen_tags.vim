@@ -14,14 +14,8 @@
 "       :ClearCtags
 " ============================================================================
 
-function! s:ctags_get_db_name() abort
-  let l:file = gen_tags#get_db_dir() . '/' . s:ctags_db
-
-  return l:file
-endfunction
-
-function! s:ctags_get_extend_list() abort
-  let l:file = gen_tags#get_db_dir() . '/' . s:ext
+function! s:ctags_get_extend_list(...) abort
+  let l:file = (a:0 ? a:1 : gen_tags#get_db_dir()) . '/' . s:ext
 
   if filereadable(l:file)
     let l:list = readfile(l:file)
@@ -31,24 +25,31 @@ function! s:ctags_get_extend_list() abort
   return []
 endfunction
 
-function! s:ctags_get_extend_name(item) abort
-  let l:file = gen_tags#get_db_dir() . '/' . gen_tags#get_db_name(a:item)
+function! s:ctags_get_extend_name(item, ...) abort
+  let l:file = (a:0 ? a:1 : gen_tags#get_db_dir()) . '/' . gen_tags#get_db_name(a:item)
 
   return l:file
 endfunction
 
+"Add a tags file to 'tags'. Returns 1 if 'tags' changed.
 function! s:ctags_add(file) abort
+  let l:old = &tags
   let l:file = escape(a:file, ' ')
   exec 'set tags' . '+=' . expand(l:file)
 
+  "Vim ignores duplicate 'tags' entries; only notify when something changed
+  if &tags ==# l:old
+    return 0
+  endif
+
   silent! doautocmd User GenTags#CtagsLoaded
+  return 1
 endfunction
 
 "Only add ctags db as extension database
-function! s:ctags_add_ext() abort
-  for l:item in s:ctags_get_extend_list()
-    let l:file = s:ctags_get_extend_name(l:item)
-    call s:ctags_add(l:file)
+function! s:ctags_add_ext(dir) abort
+  for l:item in s:ctags_get_extend_list(a:dir)
+    call s:ctags_add(s:ctags_get_extend_name(l:item, a:dir))
   endfor
 endfunction
 
@@ -64,6 +65,9 @@ endfunction
 
 "Generate ctags tags and set tags option
 function! s:ctags_gen(filename, dir) abort
+  "Explicit generation re-detects the project (repo may be new)
+  call gen_tags#clear_cache()
+
   "Check if current path in the blacklist
   if gen_tags#isblacklist(gen_tags#find_project_root())
     return
@@ -74,7 +78,7 @@ function! s:ctags_gen(filename, dir) abort
   call gen_tags#mkdir(l:dir)
 
   call gen_tags#echo('Generating ctags in background')
-  let l:file = s:ctags_update_all(a:filename, a:dir)
+  let l:file = s:ctags_update_all(a:filename, a:dir, l:dir)
 
   "Search for existence tags string.
   let l:ret = stridx(&tags, l:dir)
@@ -84,10 +88,16 @@ function! s:ctags_gen(filename, dir) abort
 endfunction
 
 function! s:ctags_auto_load() abort
-  let l:file = s:ctags_get_db_name()
+  "Special buffers (help, quickfix, terminal, ...) never have project tags
+  if !empty(&buftype)
+    return
+  endif
+
+  let l:dir = gen_tags#get_db_dir()
+  let l:file = l:dir . '/' . s:ctags_db
   if filereadable(l:file)
     call s:ctags_add(l:file)
-    call s:ctags_add_ext()
+    call s:ctags_add_ext(l:dir)
   endif
 endfunction
 
@@ -105,8 +115,9 @@ endfunction
 
 "Geterate extend ctags
 function! s:ctags_ext_gen() abort
-  for l:item in s:ctags_get_extend_list()
-    let l:file = s:ctags_get_extend_name(l:item)
+  let l:dir = gen_tags#get_db_dir()
+  for l:item in s:ctags_get_extend_list(l:dir)
+    let l:file = s:ctags_get_extend_name(l:item, l:dir)
     call s:ctags_gen(l:file, l:item)
   endfor
 
@@ -124,13 +135,15 @@ endfunction
 "Delete exist tags file
 function! s:ctags_clear(bang) abort
   if empty(a:bang) || !has('patch-7.4.1107')
+    let l:dir = gen_tags#get_db_dir()
+
     "Remove project ctags
-    let l:file = s:ctags_get_db_name()
+    let l:file = l:dir . '/' . s:ctags_db
     call s:ctags_remove_file(l:file)
 
     "Remove extend ctags
-    for l:item in s:ctags_get_extend_list()
-      let l:file = s:ctags_get_extend_name(l:item)
+    for l:item in s:ctags_get_extend_list(l:dir)
+      let l:file = s:ctags_get_extend_name(l:item, l:dir)
       call s:ctags_remove_file(l:file)
     endfor
   else
@@ -141,6 +154,10 @@ function! s:ctags_clear(bang) abort
 endfunction
 
 function! s:ctags_auto_update() abort
+  if !empty(&buftype)
+    return
+  endif
+
   let l:tagfile = gen_tags#get_db_dir() . '/' . s:ctags_db
 
   if !filereadable(l:tagfile)
@@ -155,7 +172,7 @@ function! s:ctags_auto_update() abort
   "Prune tags content for saved file
   if g:gen_tags#ctags_prune
     call s:ctags_prune(l:tagfile, l:srcfile)
-    call s:ctags_update_single(l:srcfile)
+    call s:ctags_update_single(l:srcfile, l:tagfile)
   else
     call s:ctags_update_all('', '')
   endif
@@ -225,29 +242,27 @@ function! s:ctags_prune(tagfile, file) abort
     return
   endif
 
-  "Fix pattern for windows
-  if has('win32')
-    let l:pattern = escape(escape(a:file, '\'), '\')
-  else
-    let l:pattern = a:file
+  "ctags escapes backslashes in file names on windows
+  let l:needle = "\t" . (has('win32') ? escape(a:file, '\') : a:file) . "\t"
+
+  "Literal match: file names may contain regex characters
+  let l:tags = readfile(a:tagfile, 'b')
+  let l:count = len(l:tags)
+  call filter(l:tags, 'stridx(v:val, l:needle) < 0')
+
+  "Skip rewriting the (possibly large) tags file when nothing was pruned
+  if len(l:tags) != l:count
+    call writefile(l:tags, a:tagfile, 'b')
   endif
-
-  let l:pattern = '\t' . l:pattern . '\t'
-
-  let tags = readfile(a:tagfile)
-
-  call filter(tags, 'v:val !~ l:pattern')
-  call writefile(tags, a:tagfile, 'b')
 endfunction
 
 "s:ctags_update_single update tags file single file
 "NOTE: ctags append mode is buggy.
 "So if your project is not very large, just disable
-function! s:ctags_update_single(file) abort
+function! s:ctags_update_single(file, tagfile) abort
   let l:cmd = s:ctags_cmd_pre()
 
-  let l:dir = gen_tags#get_db_dir()
-  let l:file = expand(l:dir . '/' . s:ctags_db)
+  let l:file = expand(a:tagfile)
 
   let l:cmd += ['-f', l:file, '-a', expand(a:file)]
 
@@ -255,8 +270,8 @@ function! s:ctags_update_single(file) abort
 endfunction
 
 "s:ctags_update_all generate tags for all the file and the tags name
-function! s:ctags_update_all(filename, dir) abort
-  let l:dir = gen_tags#get_db_dir()
+function! s:ctags_update_all(filename, dir, ...) abort
+  let l:dir = a:0 ? a:1 : gen_tags#get_db_dir()
 
   let l:cmd = s:ctags_cmd_pre()
 
