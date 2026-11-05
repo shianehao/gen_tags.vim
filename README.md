@@ -1,5 +1,7 @@
 # gen_tags.vim
 
+[![test](https://github.com/shianehao/gen_tags.vim/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/shianehao/gen_tags.vim/actions/workflows/test.yml)
+
 This plugin was born from a little requirement of myself more than 10 years ago.
 After many changes then it become an usable plugin.
 I got many helps from the lovely people all over the world during the time.
